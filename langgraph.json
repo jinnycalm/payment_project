@@ -1,3 +1,13 @@
 {
-    
+    "graphs": {
+        "main_agent": "./app.py:graph"
+    },
+    "env": "./.env",
+    "python_version": "3.13",
+    "dependencies": [
+        "."
+    ],
+    "http": {
+        "app": "./webapp.py:app"
+    }
 }
