@@ -12,7 +12,9 @@ const CATEGORIES = [
     { id: 'MT1', name: '대형마트', imgSrc: '/icons/mart.png' },
     { id: 'AC5', name: '학원', imgSrc: '/icons/education.png' },
     { id: 'PK6', name: '주차장', imgSrc: '/icons/parking.png' },
-    { id: 'OL7', name: '주유소/충전소', imgSrc: '/icons/fuel.png' },
+    { id: 'OL7', name: '주유소/충전소', imgSrc: '/icons/oil.png' },
+    { id: 'SW8', name: '교통', imgSrc: '/icons/transportation.png' },
+    { id: 'CT1', name: '문화', imgSrc: '/icons/culture.png' },
 ];
 
 function MapPage() {
@@ -127,20 +129,21 @@ function MapPage() {
 
     // 키워드 검색의 경우에만 지도 범위를 결과에 맞게 재조정 (카테고리는 현재 화면 기준이므로 제외)
     if (!activeCategoryRef.current && places.length > 0) {
-      mapRef.current.setBounds(bounds);
+      // 첫 번째 결과를 중심으로 지도를 이동하고 확대(정확도 향상을 위함)
+      const firstPlacePosition = new window.kakao.maps.LatLng(places[0].y, places[0].x);
+      mapRef.current.setCenter(firstPlacePosition);
+      mapRef.current.setLevel(3, { animate: true }); // 원하는 확대 레벨로 설정
     }
   };
 
   // 커스텀 이미지 마커 생성 및 클릭 이벤트 추가
   const addMarker = (place) => {
-      const cat = CATEGORIES.find(c => c.id == place.category_group_code) || null;
+      const cat = CATEGORIES.find(c => c.id === place.category_group_code) || null;
       let markerImage = null;
 
-    if (cat) {
-        var imgSrc = cat.imgSrc;
-        var imageSize = new window.kakao.maps.Size(45, 63);
-        markerImage = new window.kakao.maps.MarkerImage(imgSrc, imageSize, { offset: new window.kakao.maps.Point(14, 40) });
-    }
+      var imgSrc = cat ? cat.imgSrc : '/icons/other.png';
+      var imageSize = new window.kakao.maps.Size(56, 79); 
+      markerImage = new window.kakao.maps.MarkerImage(imgSrc, imageSize, { offset: new window.kakao.maps.Point(14, 40) });
 
     const marker = new window.kakao.maps.Marker({
         position: new window.kakao.maps.LatLng(place.y, place.x),
@@ -166,7 +169,7 @@ function MapPage() {
 
   // 말풍선(CustomOverlay) 띄우기
   const displayInfoWindow = (marker, place) => {
-    if (overlayRef.current) overlayRef.current.setMap(null);
+    if (overlayRef.current) overlayRef.current.setMap(null); 
 
     const content = document.createElement('div');
     content.className = 'place-overlay';
@@ -180,13 +183,22 @@ function MapPage() {
     content.querySelector('.btn-check-benefit').onclick = async () => {
       setAnalyzingPlace(place);
       try {
+        // 백엔드 전송을 위해 place 객체를 복사
+        const placeToSend = { ...place };
+
+        // 카테고리 코드가 없는 경우 '기타'로 기본값을 설정
+        if (!placeToSend.category_group_code) {
+          placeToSend.category_group_code = 'EX1';
+          placeToSend.category_group_name = '기타';
+        }
+
         // 백엔드로 장소 정보 전송 및 혜택 분석 요청
         const response = await fetch('http://localhost:8000/api/benefits/analyze', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(place),
+          body: JSON.stringify(placeToSend),
         });
         const analysisResult = await response.json();
         
