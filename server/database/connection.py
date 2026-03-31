@@ -1,6 +1,7 @@
 from sshtunnel import SSHTunnelForwarder
 import psycopg2
-from config import settings
+from server.config import settings
+from contextlib import contextmanager
 
 # DB class
 class RemoteDBConnection:
@@ -19,7 +20,6 @@ class RemoteDBConnection:
                 remote_bind_address=(self.config.RDS_HOST, self.config.RDS_PORT)
             )
             self.tunnel.start()
-            print('SSH 터널 생성 완료')
 
             self.connection = psycopg2.connect(
                 host='127.0.0.1',
@@ -28,7 +28,6 @@ class RemoteDBConnection:
                 database=self.config.RDS_DB_NAME,
                 password=self.config.RDS_PASSWORD,
             )
-            print('DB 연결 시작')
             return self.connection        # with 구문에서 사용할 connection 객체 반환
 
         except Exception as e:
@@ -40,12 +39,11 @@ class RemoteDBConnection:
         '''DB 연결 종료 및 SSH Tunnel 종료'''
         if self.connection:
             self.connection.close()
-            print('DB 연결 종료')
         if self.tunnel:
             self.tunnel.stop()
-            print('SSH 터널 종료')
 
 
+@contextmanager     # 제너레이터가 with 구문에서 컨텍스트 매니저로 작동하도록 하는 데코레이터
 def get_db_conn(): 
     '''새로운 DB 연결 생성 및 자동 종료'''
     try:
@@ -53,6 +51,7 @@ def get_db_conn():
             yield conn                  # 제너레이터로 상태 유지 및 값을 순차적으로 반환
     except Exception as e:
         print(f'DB 연결 실패 : {e}')
+        raise
 
 
 # 테스트용
