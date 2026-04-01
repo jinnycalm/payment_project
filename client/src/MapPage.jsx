@@ -208,7 +208,7 @@ function MapPage() {
       catch (error) {
         console.error('혜택 정보 분석 중 오류 발생:', error);
         // 오류 발생 시에도 기본 정보만 가지고 이동
-        navigate('/benefit', { state: { place } });
+        navigate('/benefit', { state: { place, analysisResult: { data: null } } });
       }
     };
 

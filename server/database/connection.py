@@ -46,12 +46,8 @@ class RemoteDBConnection:
 @contextmanager     # 제너레이터가 with 구문에서 컨텍스트 매니저로 작동하도록 하는 데코레이터
 def get_db_conn(): 
     '''새로운 DB 연결 생성 및 자동 종료'''
-    try:
-        with RemoteDBConnection(settings) as conn:
-            yield conn                  # 제너레이터로 상태 유지 및 값을 순차적으로 반환
-    except Exception as e:
-        print(f'DB 연결 실패 : {e}')
-        raise
+    with RemoteDBConnection(settings) as conn:
+        yield conn           # 제너레이터로 상태 유지 및 값을 순차적으로 반환
 
 
 # 테스트용

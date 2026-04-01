@@ -8,7 +8,7 @@ function Home() {
   return (
     <div className="page-container">
       <div className="card">
-        <h1 className="title">결제의 정답</h1>
+        <h1 className="title">💳결제의 정답🎯</h1>
         <p className="subtitle">
           당신의 지갑을 지키고<br />
           가장 스마트한 혜택을 찾아드립니다.

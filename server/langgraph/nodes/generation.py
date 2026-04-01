@@ -61,7 +61,7 @@ def format_briefing(state: AnalysisState) -> dict:
         briefing += f"- 혜택 내용: **{rec['benefit_description']}**\n"
         briefing += f"- 추천 이유: {rec['positive_reason']}\n"
         briefing += f"- ⚠️ **체크포인트**: {rec['critical_review']}\n"
-        briefing += f"- 근거: {rec['evidence']}\n\n"
+        briefing += f"- 근거: {rec['evidence']}\n\n\n"
     
     briefing += f"**💡 최종 요약**\n{ranking_data['summary']}"
     
