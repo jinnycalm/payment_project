@@ -18,10 +18,10 @@ def valid_benefit(card: Dict[str, Any], store_category: str) -> List[Dict[str, A
     last_month_spent = card.get("last_month_spent", 0)
 
     category_map = {
-        'FD6': "FOOD", 'CE7': "DAILY_LIFE_GROUP", 'CS2': "DAILY_LIFE_GROUP",
-        'HP8': "MEDICAL", 'PM9': "MEDICAL", 'MT1': "DAILY_LIFE_GROUP",
+        'FD6': "FOOD", 'CE7': "CAFE_BAKERY", 'CS2': "CONVENIENCE",
+        'HP8': "MEDICAL", 'PM9': "MEDICAL", 'MT1': "SHOPPING",
         'AC5': "EDUCATION", 'PK6': "PARKING_LOT", 'OL7': "OIL", 
-        'SW8': "TRANSPORTATION", 'CT1': "DAILY_LIFE_GROUP", "EX1": "OTHER"
+        'SW8': "TRANSPORTATION", 'CT1': "CULTURE_ENTERTAINMENT", "EX1": "OTHER"
     }
     target_category = category_map.get(store_category, "OTHER")  # 사용자가 선택한 업종
 
@@ -120,30 +120,11 @@ def cross_check_with_rag(card: Dict[str, Any], store_name: str, store_category: 
     benefits_json = card.get("benefits_json", {})
     critical_warning = benefits_json.get("critical_warning", "특별한 주의사항 없음.")
     
-    # 1. DB 필터링용 영문 카테고리 코드 (예: "FOOD")
-    filter_category_map = {
-        'FD6': "FOOD", 'CE7': "DAILY_LIFE_GROUP", 'CS2': "DAILY_LIFE_GROUP",
-        'HP8': "MEDICAL", 'PM9': "MEDICAL", 'MT1': "DAILY_LIFE_GROUP",
-        'AC5': "EDUCATION", 'PK6': "PARKING_LOT", 'OL7': "OIL", 
-        'SW8': "TRANSPORTATION", 'CT1': "DAILY_LIFE_GROUP", "EX1": "OTHER"
-    }
-    
-    # 자연어 임베딩용 한국어 카테고리 (예: "음식점")
-    embedding_category_map = {
-        'FD6': "음식점", 'CE7': "카페", 'CS2': "편의점",
-        'HP8': "병원", 'PM9': "약국", 'MT1': "대형마트",
-        'AC5': "학원", 'PK6': "주차장", 'OL7': "주유소/충전소", 
-        'SW8': "교통", 'CT1': "문화", "EX1": "기타"
-    }
-    
-    filter_category = filter_category_map.get(store_category, 'OTHER')
-    embedding_category = embedding_category_map.get(store_category, '일반매장')
-    
     # 1. 임베딩 모델 초기화 및 쿼리 벡터 생성
     try:
         embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
         
-        query_text = f"카드명: {card.get('card_name')} | 혜택: {embedding_category} | 상세: {store_name} 혜택 조건, 실적 제외 대상 및 주의사항"
+        query_text = f"카드명: {card.get('card_name')} | 상세: {store_name} 혜택 조건, 실적 제외 대상 및 주의사항"
         query_vector = embeddings.embed_query(query_text)
         
     except Exception as e:
@@ -160,18 +141,14 @@ def cross_check_with_rag(card: Dict[str, Any], store_name: str, store_category: 
         with get_db_conn() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
-            # LIKE 검색을 위해 영문 카테고리 앞뒤로 % 추가
-            like_pattern = f"%{filter_category}%"
-            
             # 2. pgvector를 사용한 벡터 유사도 검색 실행
             cursor.execute("""
                 SELECT content, 1 - (embedding <=> %s::vector) as similarity
                 FROM card_benefit_vectors
                 WHERE card_id = %s 
-                    AND benefit_category LIKE %s
                 ORDER BY embedding <=> %s::vector
                 LIMIT 1
-            """, (str(query_vector), str(card.get('card_id')), like_pattern, str(query_vector)))
+            """, (str(query_vector), str(card.get('card_id')), str(query_vector)))
             
             row = cursor.fetchone()
             
