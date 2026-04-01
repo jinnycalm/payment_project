@@ -119,14 +119,30 @@ def cross_check_with_rag(card: Dict[str, Any], store_name: str, store_category: 
     """pgvector를 이용해 혜택과 주의사항을 RAG로 교차 검증"""
     benefits_json = card.get("benefits_json", {})
     critical_warning = benefits_json.get("critical_warning", "특별한 주의사항 없음.")
-    
+
+    # RAG 쿼리용 한국어 카테고리 매핑
+    category_map = {
+        "FD6": "음식점, 식당, 외식, 패밀리레스토랑",
+        "CE7": "카페, 스타벅스, 베이커리, 커피, 디저트, 투썸, 이디야, 파리바게트, 뚜레쥬르",
+        "CS2": "편의점, CU, GS25, 세븐일레븐, 이마트24",
+        "HP8": "병원, 약국, 치과, 한의원, 의료, 건강검진",
+        "PM9": "병원, 약국, 치과, 한의원, 의료, 건강검진",
+        "MT1": "마트, 이마트, 홈플러스, 롯데마트, 백화점",
+        "AC5": "학원, 교육, 학습지, 강의",
+        "PK6": "주차장, 주차, 발레파킹",
+        "OL7": "주유, GSCALTEX, S-OIL, 현대오일뱅크, SK에너지, 충전소",
+        "SW8": "지하철, KTX, SRT",
+        "CT1": "영화, CGV, 메가박스, 롯데시네마, 문화, 공연, 전시, 테마파크",
+        "EX1": "기타 시설, 다이소"
+    }
+    mapping_category = category_map.get(store_category, "일반 매장")
+
     # 1. 임베딩 모델 초기화 및 쿼리 벡터 생성
     try:
         embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-        
-        query_text = f"카드명: {card.get('card_name')} | 상세: {store_name} 혜택 조건, 실적 제외 대상 및 주의사항"
+        query_text = f"카드명: {card.get('card_name')} | 내용: {mapping_category} 매장 ({store_name}) 이용 시 혜택 조건, 실적 제외, 주요 유의사항"
         query_vector = embeddings.embed_query(query_text)
-        
+    
     except Exception as e:
         print(f"❌ 임베딩 생성 실패: {e}")
         # 임베딩 실패 시 기본 정보만 반환

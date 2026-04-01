@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from langchain_openai import OpenAIEmbeddings
 from psycopg2.extras import RealDictCursor
 
 from server.database.connection import get_db_conn
@@ -29,11 +30,70 @@ def search_user_cards(state: AnalysisState) -> List[Dict[str, Any]]:
 
 
 def fetch_offline_events_from_rag(state: AnalysisState) -> List[Dict[str, Any]]:
-    """RAG를 사용하여 현장 결제 이벤트 정보 조회"""
+    """RAG를 사용하여 Vector DB에서 현장 결제 이벤트 정보 조회"""
     print("--- RAG 현장 이벤트 조회 중 ---")
-   
-    dummy_events = [
-        {"pay_system": "네이버페이", "brand": state["store_name"], "benefit_detail": "결제 금액의 10% 페이백", "max_benefit": 2000, "source": "naver_events.md"}
-    ]
-    print(f"✅ RAG로 조회된 이벤트 수: {len(dummy_events)}개")
-    return dummy_events
+    store_name = state["store_name"]
+    store_category = state["store_category"]
+
+    # 카테고리 코드를 자연어 키워드로 변환 (RAG 쿼리 보강용)
+    category_map = {
+        "FD6": "음식점, 식당, 외식, 패밀리레스토랑",
+        "CE7": "카페, 스타벅스, 베이커리, 커피, 디저트, 투썸, 이디야, 파리바게트, 뚜레쥬르",
+        "CS2": "편의점, CU, GS25, 세븐일레븐, 이마트24",
+        "HP8": "병원, 약국, 치과, 한의원, 의료, 건강검진",
+        "PM9": "병원, 약국, 치과, 한의원, 의료, 건강검진",
+        "MT1": "마트, 이마트, 홈플러스, 롯데마트, 백화점",
+        "AC5": "학원, 교육, 학습지, 강의",
+        "PK6": "주차장, 주차, 발레파킹",
+        "OL7": "주유, GSCALTEX, S-OIL, 현대오일뱅크, SK에너지, 충전소",
+        "SW8": "지하철, KTX, SRT",
+        "CT1": "영화, CGV, 메가박스, 롯데시네마, 문화, 공연, 전시, 테마파크",
+        "EX1": "기타 시설, 다이소"
+    }
+    mapping_category = category_map.get(store_category, "일반 매장")
+
+    try:
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        query_text = f"{store_name} ({mapping_category})에서 사용 가능한 현장 결제 이벤트"
+        query_vector = embeddings.embed_query(query_text)
+    
+    except Exception as e:
+        print(f"❌ 이벤트 RAG 임베딩 생성 실패: {e}")
+        return []
+
+    found_events = []
+    try:
+        with get_db_conn() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            cursor.execute("""
+                SELECT content, metadata, 1 - (embedding <=> %s::vector) as similarity
+                FROM naver_pay_vectors
+                ORDER BY embedding <=> %s::vector
+                LIMIT 5
+            """, (str(query_vector), str(query_vector)))
+            
+            for row in cursor.fetchall():
+                if row['similarity'] < 0.75:  # 유사도 임계값 이하인 결과는 무시
+                    continue
+
+                metadata = row.get('metadata', {})
+                brands = metadata.get('brands', [])
+                
+                # store_name이 이벤트 대상 브랜드 중 하나와 일치하는지 확인
+                if brands and not any(brand.lower() in store_name.lower() for brand in brands):
+                    continue
+
+                # 최종 결과 포맷팅
+                found_events.append({
+                    "pay_system": metadata.get("payment_method", "정보 없음"),
+                    "brand": ", ".join(brands) if brands else "모든 매장",
+                    "benefit_detail": row.get('content', '상세 정보 없음'),
+                    "max_benefit": metadata.get("benefit_max"),
+                    "source": "naver_pay_vectors"
+                })
+    except Exception as e:
+        print(f"❌ 이벤트 RAG 벡터 검색 실패: {e}")
+
+    print(f"✅ RAG로 조회된 이벤트 수: {len(found_events)}개")
+    return found_events
