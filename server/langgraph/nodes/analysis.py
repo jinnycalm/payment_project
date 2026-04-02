@@ -7,8 +7,46 @@ from psycopg2.extras import RealDictCursor
 from server.database.connection import get_db_conn
 from server.langgraph.models import AnalysisState, CardAnalysisResult
 
+def get_refined_category(store_category_code: str, store_name: str) -> str:
+    """카카오 API 카테고리 코드와 매장명을 바탕으로 카테고리 정제,
+    특히 'EX1' (기타 시설)의 경우 매장명 키워드를 통해 더 구체적인 카테고리로 매핑 진행"""
+    
+    # 직접 매핑되는 카테고리
+    direct_map = {
+        'FD6': "FOOD",
+        'CE7': "CAFE_BAKERY",
+        'CS2': "CONVENIENCE",
+        'HP8': "MEDICAL",
+        'PM9': "MEDICAL",
+        'MT1': "SHOPPING",
+        'AC5': "EDUCATION",
+        'PK6': "PARKING_LOT",
+        'OL7': "OIL",
+        'SW8': "TRANSPORTATION",
+        'CT1': "CULTURE_ENTERTAINMENT"
+    }
 
-def valid_benefit(card: Dict[str, Any], store_category: str) -> List[Dict[str, Any]]:
+    if store_category_code in direct_map:
+        return direct_map[store_category_code]
+
+    # EX1 (기타 시설)에 대한 특별 처리
+    if store_category_code == "EX1":
+        if "다이소" in store_name or "올리브영" in store_name:
+            return "CONVENIENCE"
+        elif "마트" in store_name or "백화점" in store_name or "아울렛" in store_name or "쇼핑" in store_name:
+            return "SHOPPING"
+        elif "학원" in store_name or "교육" in store_name or "서점" in store_name or "유치원" in store_name:
+            return "EDUCATION"
+        elif "한의원" in store_name:
+            return "MEDICAL"
+        elif "버스" in store_name or "택시" in store_name or "KTX" in store_name or "SRT" in store_name:
+            return "TRANSPORTATION"
+        else:
+            return "OTHER" # 최종적으로 매핑되지 않으면 'OTHER'로 분류
+
+    return "OTHER"
+
+def valid_benefit(card: Dict[str, Any], store_category_code: str, store_name: str) -> List[Dict[str, Any]]:
     """카드 한 개에 대해, 주어진 결제 정보에 적용 가능한 모든 혜택을 찾아 요약"""
     benefits_json = card.get("benefits_json", {})
     if not benefits_json:
@@ -16,14 +54,8 @@ def valid_benefit(card: Dict[str, Any], store_category: str) -> List[Dict[str, A
 
     card_name = card.get("card_name")
     last_month_spent = card.get("last_month_spent", 0)
-
-    category_map = {
-        'FD6': "FOOD", 'CE7': "CAFE_BAKERY", 'CS2': "CONVENIENCE",
-        'HP8': "MEDICAL", 'PM9': "MEDICAL", 'MT1': "SHOPPING",
-        'AC5': "EDUCATION", 'PK6': "PARKING_LOT", 'OL7': "OIL", 
-        'SW8': "TRANSPORTATION", 'CT1': "CULTURE_ENTERTAINMENT", "EX1": "OTHER"
-    }
-    target_category = category_map.get(store_category, "OTHER")  # 사용자가 선택한 업종
+    
+    target_category = get_refined_category(store_category_code, store_name) # 정제된 카테고리 사용
 
     print(f"💳 {card_name} 혜택 분석")
     found_benefits = []         # 해당 업종과 실적 조건을 충족하는 혜택들을 모두 찾아서 요약
@@ -115,32 +147,34 @@ def valid_benefit(card: Dict[str, Any], store_category: str) -> List[Dict[str, A
 
     return found_benefits
 
-def cross_check_with_rag(card: Dict[str, Any], store_name: str, store_category: str) -> Dict[str, Any]:
+def cross_check_with_rag(card: Dict[str, Any], store_name: str, store_category_code: str) -> Dict[str, Any]:
     """pgvector를 이용해 혜택과 주의사항을 RAG로 교차 검증"""
     benefits_json = card.get("benefits_json", {})
     critical_warning = benefits_json.get("critical_warning", "특별한 주의사항 없음.")
 
-    # RAG 쿼리용 한국어 카테고리 매핑
-    category_map = {
-        "FD6": "음식점, 식당, 외식, 패밀리레스토랑",
-        "CE7": "카페, 스타벅스, 베이커리, 커피, 디저트, 투썸, 이디야, 파리바게트, 뚜레쥬르",
-        "CS2": "편의점, CU, GS25, 세븐일레븐, 이마트24",
-        "HP8": "병원, 약국, 치과, 한의원, 의료, 건강검진",
-        "PM9": "병원, 약국, 치과, 한의원, 의료, 건강검진",
-        "MT1": "마트, 이마트, 홈플러스, 롯데마트, 백화점",
-        "AC5": "학원, 교육, 학습지, 강의",
-        "PK6": "주차장, 주차, 발레파킹",
-        "OL7": "주유, GSCALTEX, S-OIL, 현대오일뱅크, SK에너지, 충전소",
-        "SW8": "지하철, KTX, SRT",
-        "CT1": "영화, CGV, 메가박스, 롯데시네마, 문화, 공연, 전시, 테마파크",
-        "EX1": "기타 시설, 다이소"
+    # 정제된 카테고리 사용
+    filter_category = get_refined_category(store_category_code, store_name)
+
+    # 자연어 임베딩용 한국어 카테고리 (정제된 카테고리에 맞춰 상세화)
+    embedding_category_map = {
+        "FOOD": "음식점, 식당, 외식, 패밀리레스토랑",
+        "CAFE_BAKERY": "카페, 스타벅스, 베이커리, 커피, 디저트, 투썸, 이디야, 파리바게트, 뚜레쥬르",
+        "CONVENIENCE": "편의점, CU, GS25, 세븐일레븐, 이마트24, 다이소, 올리브영",
+        "MEDICAL": "병원, 약국, 치과, 한의원, 의료, 건강검진",
+        "SHOPPING": "마트, 이마트, 홈플러스, 롯데마트, 백화점, 아울렛, 쇼핑",
+        "EDUCATION": "학원, 교육, 학습지, 강의, 서점, 도서, 유치원",
+        "PARKING_LOT": "주차장, 주차, 발레파킹",
+        "OIL": "주유, GSCALTEX, S-OIL, 현대오일뱅크, SK에너지, 충전소",
+        "TRANSPORTATION": "대중교통, 버스, 지하철, 택시, 철도, KTX, SRT, K-패스",
+        "CULTURE_ENTERTAINMENT": "영화, CGV, 메가박스, 롯데시네마, 문화, 공연, 전시, 테마파크, 놀이공원",
+        "OTHER": "기타 시설"
     }
-    mapping_category = category_map.get(store_category, "일반 매장")
+    embedding_category = embedding_category_map.get(filter_category, "일반 매장")
 
     # 1. 임베딩 모델 초기화 및 쿼리 벡터 생성
     try:
         embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-        query_text = f"카드명: {card.get('card_name')} | 내용: {mapping_category} 매장 ({store_name}) 이용 시 혜택 조건, 실적 제외, 주요 유의사항"
+        query_text = f"카드명: {card.get('card_name')} | 내용: {embedding_category} 매장 ({store_name}) 혜택 조건, 실적 제외, 주요 유의사항"
         query_vector = embeddings.embed_query(query_text)
     
     except Exception as e:
@@ -262,7 +296,7 @@ def consolidate_analysis(state: AnalysisState) -> dict:
     analyzed_cards = []
     for card in state["candidate_cards"]:
         # 1. 적용 가능한 혜택 찾기
-        applicable_benefits = valid_benefit(card, state["store_category"])
+        applicable_benefits = valid_benefit(card, state["store_category"], state["store_name"])
         
         # 2. RAG를 통한 교차 검증
         rag_check = cross_check_with_rag(card, state["store_name"], state["store_category"])

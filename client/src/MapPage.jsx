@@ -138,8 +138,12 @@ function MapPage() {
 
   // 커스텀 이미지 마커 생성 및 클릭 이벤트 추가
   const addMarker = (place) => {
-      const cat = CATEGORIES.find(c => c.id === place.category_group_code) || null;
+      let cat = CATEGORIES.find(c => c.id === place.category_group_code);
       let markerImage = null;
+    
+      if (!cat && place.category_group_code === 'AT4') {
+        cat = { id: 'CT1', name: '문화', imgSrc: '/icons/culture.png' };
+      }
 
       var imgSrc = cat ? cat.imgSrc : '/icons/other.png';
       var imageSize = new window.kakao.maps.Size(56, 79); 
